@@ -16,7 +16,7 @@ def unitree_g1_crouch_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
       obs_normalization=True,
       distribution_cfg={
         "class_name": "GaussianDistribution",
-        "init_std": 1.0,
+        "init_std": 0.4,
         "std_type": "scalar",
       },
     ),

@@ -204,6 +204,7 @@ def make_crouching_env_cfg() -> ManagerBasedRlEnvCfg:
   ##
 
   rewards = {
+    "alive": RewardTermCfg(func=envs_mdp.is_alive, weight=1.0),
     "track_pelvis_height": RewardTermCfg(
       func=mdp.track_pelvis_height,
       weight=4.0,
@@ -253,7 +254,7 @@ def make_crouching_env_cfg() -> ManagerBasedRlEnvCfg:
     "is_terminated": RewardTermCfg(func=envs_mdp.is_terminated, weight=-5.0),
     "joint_acc_l2": RewardTermCfg(func=envs_mdp.joint_acc_l2, weight=-2.5e-7),
     "joint_pos_limits": RewardTermCfg(func=envs_mdp.joint_pos_limits, weight=-10.0),
-    "action_rate_l2": RewardTermCfg(func=envs_mdp.action_rate_l2, weight=-0.05),
+    "action_rate_l2": RewardTermCfg(func=envs_mdp.action_rate_l2, weight=-0.02),
   }
 
   ##
