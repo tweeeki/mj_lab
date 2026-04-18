@@ -40,21 +40,20 @@ def unitree_g1_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.events["foot_friction"].params["asset_cfg"].geom_names = geom_names
   cfg.events["base_com"].params["asset_cfg"].body_names = ("torso_link",)
 
-  # Posture regularization: keep upper body near default, allow leg joints to move
-  # (they must change to follow commanded height), keep ankles/waist tight for balance.
+  # Foot sites for feet_slip reward.
+  site_names = ("left_foot", "right_foot")
+  cfg.rewards["feet_slip"].params["asset_cfg"].site_names = site_names
+
+  # Posture regularization: keep upper body / hip-roll-yaw / ankle-roll near default.
+  # hip_pitch, knee, ankle_pitch are excluded via the asset_cfg regex so the squat
+  # motion is unconstrained.
   cfg.rewards["posture"].params["std"] = {
-    # Lower body — loose on pitch joints that drive the squat.
-    r".*hip_pitch.*": 0.6,
     r".*hip_roll.*": 0.15,
     r".*hip_yaw.*": 0.15,
-    r".*knee.*": 0.8,
-    r".*ankle_pitch.*": 0.4,
     r".*ankle_roll.*": 0.1,
-    # Waist — tight, keep torso upright and stable.
     r".*waist_yaw.*": 0.15,
     r".*waist_roll.*": 0.1,
     r".*waist_pitch.*": 0.1,
-    # Arms — moderate, let them counterbalance a bit.
     r".*shoulder_pitch.*": 0.2,
     r".*shoulder_roll.*": 0.15,
     r".*shoulder_yaw.*": 0.15,

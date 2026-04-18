@@ -91,20 +91,19 @@ class UniformHeightCommand(CommandTerm):
       self.height_command[idx, 0] = self._joystick_slider.value
 
   def _debug_vis_impl(self, visualizer: "DebugVisualizer") -> None:
-    """Draw a small horizontal disc at the commanded height above each env origin."""
+    """Draw a sphere at the commanded height above each env origin."""
     env_indices = visualizer.get_env_indices(self.num_envs)
     if not env_indices:
       return
     base_pos_ws = self.robot.data.root_link_pos_w.cpu().numpy()
     cmds = self.height_command.cpu().numpy()
+    radius = 0.06
     for batch in env_indices:
       base_pos_w = base_pos_ws[batch]
       if np.linalg.norm(base_pos_w) < 1e-6:
         continue
       target = np.array([base_pos_w[0], base_pos_w[1], float(cmds[batch, 0])])
-      # Short vertical arrow from ground up to the commanded height.
-      ground = np.array([base_pos_w[0], base_pos_w[1], 0.0])
-      visualizer.add_arrow(ground, target, color=(1.0, 0.6, 0.1, 0.8), width=0.015)
+      visualizer.add_sphere(target, radius=radius, color=(1.0, 0.6, 0.1, 0.7))
 
 
 @dataclass(kw_only=True)

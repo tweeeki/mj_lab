@@ -5,8 +5,6 @@ commanded base height. Robot-specific configurations call the factory and
 customize asset / sensor / reward parameters as needed.
 """
 
-import math
-
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as envs_mdp
 from mjlab.envs.mdp import dr
@@ -20,6 +18,7 @@ from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.managers.termination_manager import TerminationTermCfg
 from mjlab.scene import SceneCfg
+from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
 from mjlab.terrains import TerrainEntityCfg
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
@@ -207,26 +206,51 @@ def make_crouching_env_cfg() -> ManagerBasedRlEnvCfg:
   rewards = {
     "track_pelvis_height": RewardTermCfg(
       func=mdp.track_pelvis_height,
-      weight=2.0,
-      params={"command_name": "height", "std": 0.08},
+      weight=4.0,
+      params={"command_name": "height", "std": 0.10},
     ),
-    "body_orientation_l2": RewardTermCfg(
-      func=envs_mdp.flat_orientation_l2,
-      weight=-1.0,
+    "on_target_bonus": RewardTermCfg(
+      func=mdp.on_target_bonus,
+      weight=2.0,
+      params={"command_name": "height", "threshold": 0.06},
+    ),
+    "knee_height_coupling": RewardTermCfg(
+      func=mdp.knee_height_coupling,
+      weight=4.0,
+      params={
+        "command_name": "height",
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*knee.*",)),
+      },
     ),
     "base_lin_vel": RewardTermCfg(
       func=mdp.base_linear_velocity_penalty,
       weight=-0.5,
     ),
+    "feet_slip": RewardTermCfg(
+      func=mdp.feet_slip,
+      weight=-0.5,
+      params={
+        "sensor_name": "feet_ground_contact",
+        "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
+      },
+    ),
+    "feet_air_time": RewardTermCfg(
+      func=mdp.feet_air_time,
+      weight=-1.0,
+      params={"sensor_name": "feet_ground_contact"},
+    ),
     "posture": RewardTermCfg(
       func=envs_mdp.posture,
-      weight=0.5,
+      weight=0.2,
       params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
+        # Exclude legs — they must move freely to follow commanded height.
+        "asset_cfg": SceneEntityCfg(
+          "robot", joint_names=(r"^(?!.*(hip_pitch|knee|ankle_pitch)).*"),
+        ),
         "std": {},  # Set per-robot.
       },
     ),
-    "is_terminated": RewardTermCfg(func=envs_mdp.is_terminated, weight=-200.0),
+    "is_terminated": RewardTermCfg(func=envs_mdp.is_terminated, weight=-5.0),
     "joint_acc_l2": RewardTermCfg(func=envs_mdp.joint_acc_l2, weight=-2.5e-7),
     "joint_pos_limits": RewardTermCfg(func=envs_mdp.joint_pos_limits, weight=-10.0),
     "action_rate_l2": RewardTermCfg(func=envs_mdp.action_rate_l2, weight=-0.05),
@@ -238,9 +262,9 @@ def make_crouching_env_cfg() -> ManagerBasedRlEnvCfg:
 
   terminations = {
     "time_out": TerminationTermCfg(func=envs_mdp.time_out, time_out=True),
-    "fell_over": TerminationTermCfg(
-      func=envs_mdp.bad_orientation,
-      params={"limit_angle": math.radians(60.0)},
+    "collapsed": TerminationTermCfg(
+      func=envs_mdp.root_height_below_minimum,
+      params={"minimum_height": 0.20},
     ),
   }
 
@@ -254,10 +278,24 @@ def make_crouching_env_cfg() -> ManagerBasedRlEnvCfg:
   # Assemble and return
   ##
 
+  feet_ground_contact = ContactSensorCfg(
+    name="feet_ground_contact",
+    primary=ContactMatch(
+      mode="subtree",
+      pattern=r"^(left_ankle_roll_link|right_ankle_roll_link)$",
+      entity="robot",
+    ),
+    secondary=ContactMatch(mode="body", pattern="terrain"),
+    fields=("found", "force"),
+    reduce="netforce",
+    num_slots=1,
+    track_air_time=True,
+  )
+
   return ManagerBasedRlEnvCfg(
     scene=SceneCfg(
       terrain=TerrainEntityCfg(terrain_type="plane"),
-      sensors=(),
+      sensors=(feet_ground_contact,),
       num_envs=1,
       extent=2.0,
     ),

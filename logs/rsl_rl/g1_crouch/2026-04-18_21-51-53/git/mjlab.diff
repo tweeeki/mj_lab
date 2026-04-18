@@ -1,0 +1,18 @@
+--- git commit ---
+a7dea11cff948d6ab6d97ccb10a31da40c816472
+
+
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	logs/
+	tea_debug.log
+	wandb/
+
+nothing added to commit but untracked files present (use "git add" to track) 
+
+
+--- git diff ---

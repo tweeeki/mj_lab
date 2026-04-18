@@ -1,0 +1,43 @@
+{
+  "os": "Linux-6.17.0-1017-oem-x86_64-with-glibc2.39",
+  "python": "CPython 3.10.20",
+  "startedAt": "2026-04-18T20:17:03.138202Z",
+  "args": [
+    "Unitree-G1-Crouch"
+  ],
+  "program": "/home/andor/Desktop/mj_lab/mjlab/scripts/train.py",
+  "codePath": "scripts/train.py",
+  "codePathLocal": "scripts/train.py",
+  "git": {
+    "remote": "https://github.com/tweeeki/mj_lab.git",
+    "commit": "a7dea11cff948d6ab6d97ccb10a31da40c816472"
+  },
+  "email": "andor@breinn.nl",
+  "root": "/home/andor/Desktop/mj_lab/mjlab",
+  "host": "breinn-2",
+  "executable": "/home/andor/miniconda3/envs/mujoco_python/bin/python",
+  "cpu_count": 24,
+  "cpu_count_logical": 24,
+  "gpu": "NVIDIA RTX PRO 4000 Blackwell Generation Laptop GPU",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "379508346880",
+      "used": "175790919680"
+    }
+  },
+  "memory": {
+    "total": "66810335232"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA RTX PRO 4000 Blackwell Generation Laptop GPU",
+      "memoryTotal": "17094934528",
+      "cudaCores": 7680,
+      "architecture": "Blackwell",
+      "uuid": "GPU-5fe0986e-fdf8-f692-4ca5-0e20501f9079"
+    }
+  ],
+  "cudaVersion": "12.8",
+  "writerId": "3jean85svl1yo7ab25bv9xsfbhxzx33f"
+}
