@@ -10,6 +10,7 @@ from mjlab.entity import Entity
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor import ContactSensor
+from mjlab.utils.lab_api.math import quat_apply_inverse
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
@@ -54,6 +55,23 @@ def pelvis_height_obs(
   """Current pelvis world-z as a scalar observation."""
   asset: Entity = env.scene[asset_cfg.name]
   return asset.data.root_link_pos_w[:, 2:3]
+
+
+def body_orientation_l2(
+  env: "ManagerBasedRlEnv",
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Penalize non-upright orientation of a named body (e.g. torso_link).
+
+  Falls back to root projected gravity if no body_ids are selected.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  if asset_cfg.body_ids:
+    body_quat_w = asset.data.body_link_quat_w[:, asset_cfg.body_ids, :].squeeze(1)
+    gravity_w = asset.data.gravity_vec_w
+    projected = quat_apply_inverse(body_quat_w, gravity_w)
+    return torch.sum(torch.square(projected[:, :2]), dim=1)
+  return torch.sum(torch.square(asset.data.projected_gravity_b[:, :2]), dim=1)
 
 
 def forward_lean(
@@ -115,37 +133,38 @@ def on_target_bonus(
   return (err < threshold).float()
 
 
-class knee_height_coupling:
-  """HOMIE-style coupling between knee flexion and pelvis-height error.
+class track_knee_angle:
+  """Reward knee flexion matching a linear function of the commanded height.
 
-  Rewards the product (h - h*) * (q_knee_norm - 0.5). The product is positive
-  exactly when the knees are on the "correct side" of mid-range for the current
-  height error: too tall -> knees flexed; too short -> knees extended. Use a
-  positive weight so this is a shaping reward on directional knee motion.
+  Map: q_target(z_cmd) interpolates linearly between (anchor_high, q_high) and
+  (anchor_low, q_low). Exponential reward on mean squared error across the
+  selected knee joints; paying out only when knee flexion *actually matches*
+  what the target height requires forces the policy to squat with its knees
+  instead of dropping the pelvis by tipping the torso.
   """
 
   def __init__(self, cfg: RewardTermCfg, env: "ManagerBasedRlEnv"):
     asset: Entity = env.scene[cfg.params["asset_cfg"].name]
     joint_ids, _ = asset.find_joints(cfg.params["asset_cfg"].joint_names)
     self._joint_ids = torch.tensor(joint_ids, device=env.device, dtype=torch.long)
-    lim = asset.data.soft_joint_pos_limits  # [B, J, 2]
-    assert lim is not None
-    self._lo = lim[:, self._joint_ids, 0]  # [B, K]
-    self._hi = lim[:, self._joint_ids, 1]  # [B, K]
 
   def __call__(
     self,
     env: "ManagerBasedRlEnv",
     command_name: str,
+    std: float,
+    anchor_high: float,
+    anchor_low: float,
+    q_high: float,
+    q_low: float,
     asset_cfg: SceneEntityCfg,
   ) -> torch.Tensor:
     asset: Entity = env.scene[asset_cfg.name]
     command = env.command_manager.get_command(command_name)
     assert command is not None
-    h = asset.data.root_link_pos_w[:, 2:3]
-    h_star = command[:, :1]
-    dh = h - h_star  # [B, 1]. >0: too tall -> want flexion.
-    q = asset.data.joint_pos[:, self._joint_ids]  # [B, K]
-    q_norm = (q - self._lo) / (self._hi - self._lo).clamp(min=1e-3)
-    coupling = dh * (q_norm - 0.5)  # [B, K]; positive when aligned.
-    return torch.sum(coupling, dim=1)
+    z_cmd = command[:, 0:1]  # [B, 1]
+    slope = (q_low - q_high) / (anchor_low - anchor_high)
+    q_target = q_high + (z_cmd - anchor_high) * slope  # [B, 1]
+    q_actual = asset.data.joint_pos[:, self._joint_ids]  # [B, K]
+    err = torch.mean(torch.square(q_actual - q_target), dim=1)
+    return torch.exp(-err / std**2)

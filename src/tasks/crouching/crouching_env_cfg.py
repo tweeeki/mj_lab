@@ -94,6 +94,21 @@ def make_crouching_env_cfg() -> ManagerBasedRlEnvCfg:
     "mean_action_acc": MetricsTermCfg(
       func=mdp.mean_action_acc,
     ),
+    "pelvis_z": MetricsTermCfg(
+      func=mdp.pelvis_z,
+    ),
+    "mean_knee_angle": MetricsTermCfg(
+      func=mdp.mean_knee_angle,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=(".*knee.*",)),
+      },
+    ),
+    "torso_pitch": MetricsTermCfg(
+      func=mdp.torso_pitch,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", body_names=("torso_link",)),
+      },
+    ),
   }
 
   ##
@@ -215,11 +230,21 @@ def make_crouching_env_cfg() -> ManagerBasedRlEnvCfg:
       weight=2.0,
       params={"command_name": "height", "threshold": 0.06},
     ),
-    "knee_height_coupling": RewardTermCfg(
-      func=mdp.knee_height_coupling,
-      weight=4.0,
+    "torso_upright": RewardTermCfg(
+      func=mdp.body_orientation_l2,
+      weight=-2.0,
+      params={"asset_cfg": SceneEntityCfg("robot", body_names=("torso_link",))},
+    ),
+    "track_knee_angle": RewardTermCfg(
+      func=mdp.track_knee_angle,
+      weight=3.0,
       params={
         "command_name": "height",
+        "std": 0.3,
+        "anchor_high": 0.78,
+        "anchor_low": 0.45,
+        "q_high": 0.669,
+        "q_low": 2.2,
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*knee.*",)),
       },
     ),
@@ -229,7 +254,7 @@ def make_crouching_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "feet_slip": RewardTermCfg(
       func=mdp.feet_slip,
-      weight=-0.5,
+      weight=-1.0,
       params={
         "sensor_name": "feet_ground_contact",
         "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
@@ -237,7 +262,7 @@ def make_crouching_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "feet_air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=-1.0,
+      weight=-2.0,
       params={"sensor_name": "feet_ground_contact"},
     ),
     "posture": RewardTermCfg(
