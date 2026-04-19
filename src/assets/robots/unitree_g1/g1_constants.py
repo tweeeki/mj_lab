@@ -206,12 +206,12 @@ HOME_KEYFRAME = EntityCfg.InitialStateCfg(
 )
 
 KNEES_BENT_ARMS_FORWARD_KEYFRAME = deepcopy(HOME_KEYFRAME)
-KNEES_BENT_ARMS_FORWARD_KEYFRAME["joint_pos"].update({
-    "left_shoulder_pitch_joint":  -1.2,   # arm ~70° naar voren
+KNEES_BENT_ARMS_FORWARD_KEYFRAME.joint_pos.update({
+    "left_shoulder_pitch_joint":  -1.2,
     "right_shoulder_pitch_joint": -1.2,
-    "left_shoulder_roll_joint":    0.1,   # heel licht naar buiten
+    "left_shoulder_roll_joint":    0.1,
     "right_shoulder_roll_joint":  -0.1,
-    "left_elbow_joint":            0.8,   # licht gebogen
+    "left_elbow_joint":            0.8,
     "right_elbow_joint":           0.8,
 })
 
