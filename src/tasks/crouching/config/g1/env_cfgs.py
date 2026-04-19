@@ -4,7 +4,7 @@ from src.assets.robots import (
   G1_ACTION_SCALE,
   get_g1_robot_cfg,
 )
-import src.assets.robots.unitree_g1.g1_constants
+from src.assets.robots.unitree_g1.g1_constants import HOME_KEYFRAME
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.event_manager import EventTermCfg
