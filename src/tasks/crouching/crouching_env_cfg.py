@@ -134,7 +134,7 @@ def make_crouching_env_cfg() -> ManagerBasedRlEnvCfg:
       resampling_time_range=(3.0, 8.0),
       debug_vis=True,
       ranges=mdp.UniformHeightCommandCfg.Ranges(
-        height=(0.55, 0.78),  # Override per-robot.
+        height=(0.40, 0.78),  # Override per-robot.
       ),
     ),
   }
@@ -242,9 +242,9 @@ def make_crouching_env_cfg() -> ManagerBasedRlEnvCfg:
         "command_name": "height",
         "std": 0.3,
         "anchor_high": 0.78,
-        "anchor_low": 0.35,
+        "anchor_low": 0.40,
         "q_high": 0.669,
-        "q_low": 2.3,
+        "q_low": 2.2,
         "asset_cfg": SceneEntityCfg("robot", joint_names=(".*knee.*",)),
       },
     ),

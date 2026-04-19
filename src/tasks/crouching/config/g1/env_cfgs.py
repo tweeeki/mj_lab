@@ -4,7 +4,7 @@ from src.assets.robots import (
   G1_ACTION_SCALE,
   get_g1_robot_cfg,
 )
-from src.assets.robots.unitree_g1.g1_constants import KNEES_BENT_KEYFRAME
+import src.assets.robots.unitree_g1.g1_constants
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.event_manager import EventTermCfg
@@ -19,7 +19,7 @@ def unitree_g1_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.sim.contact_sensor_maxmatch = 64
 
   robot_cfg = get_g1_robot_cfg()
-  robot_cfg.init_state = KNEES_BENT_KEYFRAME
+  robot_cfg.init_state = HOME_KEYFRAME
   cfg.scene.entities = {"robot": robot_cfg}
   cfg.viewer.body_name = "torso_link"
 
@@ -34,7 +34,7 @@ def unitree_g1_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   #   - upper bound 0.75 m: slightly below full standing (still clearly a stance)
   #   - lower bound 0.45 m: deep crouch without over-flexing knees (< 165 deg)
   height_cmd = cfg.commands["height"]
-  height_cmd.ranges.height = (0.35, 0.75)
+  height_cmd.ranges.height = (0.40, 0.78)
 
   # Foot geoms for friction randomization.
   geom_names = tuple(
