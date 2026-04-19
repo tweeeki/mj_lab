@@ -9,7 +9,7 @@ from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.event_manager import EventTermCfg
 from src.tasks.crouching.crouching_env_cfg import make_crouching_env_cfg
-
+from src.tasks.crouching.mdp import ManualPushCommandCfg
 
 def unitree_g1_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   """Create Unitree G1 crouching (height tracking) configuration on flat ground."""
@@ -69,7 +69,7 @@ def unitree_g1_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.observations["actor"].enable_corruption = False
     cfg.events.pop("push_robot", None)
     cfg.curriculum = {}
-    
+
     from src.tasks.crouching.mdp import ManualPushCommandCfg
     cfg.commands["manual_push"] = ManualPushCommandCfg(
         entity_name="robot",
