@@ -4,7 +4,7 @@ from src.assets.robots import (
   G1_ACTION_SCALE,
   get_g1_robot_cfg,
 )
-from src.assets.robots.unitree_g1.g1_constants import HOME_KEYFRAME
+from src.assets.robots.unitree_g1.g1_constants import KNEES_BENT_ARMS_FORWARD_KEYFRAME
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.event_manager import EventTermCfg
@@ -19,7 +19,7 @@ def unitree_g1_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.sim.contact_sensor_maxmatch = 64
 
   robot_cfg = get_g1_robot_cfg()
-  robot_cfg.init_state = HOME_KEYFRAME
+  robot_cfg.init_state = KNEES_BENT_ARMS_FORWARD_KEYFRAME
   cfg.scene.entities = {"robot": robot_cfg}
   cfg.viewer.body_name = "torso_link"
 
