@@ -34,7 +34,7 @@ def unitree_g1_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   #   - upper bound 0.75 m: slightly below full standing (still clearly a stance)
   #   - lower bound 0.45 m: deep crouch without over-flexing knees (< 165 deg)
   height_cmd = cfg.commands["height"]
-  height_cmd.ranges.height = (0.60, 0.75)
+  height_cmd.ranges.height = (0.35, 0.75)
 
   # Foot geoms for friction randomization.
   geom_names = tuple(
@@ -69,5 +69,12 @@ def unitree_g1_crouch_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.observations["actor"].enable_corruption = False
     cfg.events.pop("push_robot", None)
     cfg.curriculum = {}
+    
+    from src.tasks.crouching.mdp import ManualPushCommandCfg
+    cfg.commands["manual_push"] = ManualPushCommandCfg(
+        entity_name="robot",
+        resampling_time_range=(1e9, 1e9),  # effectively never resample
+        debug_vis=False,
+    )
 
   return cfg
