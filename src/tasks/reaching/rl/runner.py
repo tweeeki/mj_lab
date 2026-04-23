@@ -43,6 +43,24 @@ def _obs_term_dim(name: str, num_joints: int) -> int:
   return num_joints  # joint_pos, joint_vel, actions
 
 
+def _yaml_safe_params(params: dict) -> dict:
+  # Drop entries whose values aren't YAML-primitive (e.g. SceneEntityCfg). The
+  # deploy side only reads string/number/list params like `command_name` and
+  # hand-site names; asset_cfg is training-side plumbing that safe_dump rejects.
+  primitive = (str, int, float, bool, type(None))
+
+  def ok(v):
+    if isinstance(v, primitive):
+      return True
+    if isinstance(v, (list, tuple)):
+      return all(ok(x) for x in v)
+    if isinstance(v, dict):
+      return all(isinstance(k, str) and ok(val) for k, val in v.items())
+    return False
+
+  return {k: v for k, v in params.items() if ok(v)}
+
+
 def _resolve_per_joint(value, num_joints: int, joint_names, fallback: float) -> list[float]:
   """Resolve a (float | list | dict-of-regex) to a per-joint list of length num_joints."""
   if value is None:
@@ -125,7 +143,7 @@ def _build_deploy_cfg(env) -> dict:
     deploy_name = _OBS_NAME_MAP.get(name, name)
     dim = _obs_term_dim(name, num_joints)
     observations[deploy_name] = {
-      "params": dict(term_cfg.params or {}),
+      "params": _yaml_safe_params(dict(term_cfg.params or {})),
       "clip": None,
       "scale": [1.0] * dim,
       "history_length": history_length,
