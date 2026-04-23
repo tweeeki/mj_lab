@@ -2,6 +2,7 @@ Metadata-Version: 2.4
 Name: unitree_rl_mjlab
 Version: 0.0.1
 License-File: LICENCE
+License-File: LICENSE
 Requires-Dist: mjlab==1.2.0
 Requires-Dist: mujoco-warp==3.5.0
 Dynamic: license-file
