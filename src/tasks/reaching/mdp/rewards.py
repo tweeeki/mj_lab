@@ -112,6 +112,43 @@ class reach_success_bonus(_HandSites):
     return ((d_left < threshold) & (d_right < threshold)).float()
 
 
+class waypoint_track(_HandSites):
+  """Tight tracking of the moving waypoint → enforces the commanded arm speed.
+
+  The command term slides an internal waypoint from the current hand toward the
+  final goal at the commanded speed (m/s). Rewarding the palms for staying
+  *glued* to that moving waypoint (small ``std``) forces the arm to move at the
+  waypoint's speed: lag → error grows; rushing ahead toward the final goal →
+  ahead of the waypoint, error grows. When the waypoint reaches the goal and
+  stops, the same term becomes a hold reward — so "move at X m/s" and "stop at
+  the target" never conflict (cf. the twist-tracking reward, arXiv 2507.08656).
+
+  ``self._targets_world`` reads cmd[:, 0:6], which is the waypoint (see
+  ``UniformBimanualSphereCommand.command``), so this measures error to the
+  waypoint, not the final goal.
+
+  ``reward = exp(-(|d_L|^2 + |d_R|^2) / std^2)``.
+  """
+
+  def __call__(
+    self,
+    env: "ManagerBasedRlEnv",
+    command_name: str,
+    left_hand_site: str,
+    right_hand_site: str,
+    std: float,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  ) -> torch.Tensor:
+    del command_name, left_hand_site, right_hand_site, asset_cfg
+    left_t, right_t = self._targets_world(env)
+    left_h, right_h = self._hands_world(env)
+    d2 = (
+      torch.sum(torch.square(left_h - left_t), dim=-1)
+      + torch.sum(torch.square(right_h - right_t), dim=-1)
+    )
+    return torch.exp(-d2 / (std * std))
+
+
 class palm_facing_inward(_HandSites):
   """Encourage each palm's local +x (outward-from-hand normal) to point at the target.
 

@@ -384,5 +384,13 @@
   <worldbody>
     <light pos="1 0 3.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <body name="left_target_marker" mocap="true" pos="0.3 0.2 1.0">
+      <geom type="sphere" size="0.04" rgba="0.2 0.8 0.2 0.6"
+            contype="0" conaffinity="0" group="2"/>
+    </body>
+    <body name="right_target_marker" mocap="true" pos="0.3 -0.2 1.0">
+      <geom type="sphere" size="0.04" rgba="0.8 0.2 0.2 0.6"
+            contype="0" conaffinity="0" group="2"/>
+    </body>
   </worldbody>
 </mujoco>

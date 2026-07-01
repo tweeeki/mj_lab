@@ -122,6 +122,9 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
       right_hand_site="",  # Set per-robot.
       resampling_time_range=(3.0, 6.0),
       debug_vis=True,
+      # One shared commanded arm speed (m/s) for both hands, randomized per
+      # resample. Override per-robot in config/g1/env_cfgs.py if needed.
+      speed_range=(0.05, 0.50),
       # Default ranges in pelvis frame: roughly in front of the robot,
       # left hand on +y side, right hand on -y side. Override per-robot.
       ranges=mdp.UniformBimanualSphereCommandCfg.Ranges(
@@ -217,6 +220,20 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
         "left_hand_site": "",  # Set per-robot.
         "right_hand_site": "",  # Set per-robot.
         "threshold": 0.05,
+        "asset_cfg": SceneEntityCfg("robot"),
+      },
+    ),
+    # Tight tracking of the MOVING waypoint → enforces the commanded arm speed.
+    # See mdp/rewards.py::waypoint_track. std is small (glue the palm to the
+    # waypoint); reach_distance above stays loose for broad guidance.
+    "waypoint_track": RewardTermCfg(
+      func=mdp.waypoint_track,
+      weight=4.0,
+      params={
+        "command_name": "reach",
+        "left_hand_site": "",  # Set per-robot.
+        "right_hand_site": "",  # Set per-robot.
+        "std": 0.05,
         "asset_cfg": SceneEntityCfg("robot"),
       },
     ),

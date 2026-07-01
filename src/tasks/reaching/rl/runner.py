@@ -29,12 +29,13 @@ _OBS_NAME_MAP = {
 
 
 def _obs_term_dim(name: str, num_joints: int) -> int:
-  # The three reach-specific terms are all 6-D: two 3-D hand/target vectors
-  # stacked (left | right), in the robot root frame.
+  # hand_pos_b / hand_target_error_b are 6-D: two 3-D vectors (left | right) in
+  # the robot root frame. The command is 7-D: the two 3-D moving waypoints plus
+  # ONE shared commanded arm speed scalar (see UniformBimanualSphereCommand).
   scalar_terms = {
     "base_ang_vel": 3,
     "projected_gravity": 3,
-    "command": 6,
+    "command": 7,
     "hand_pos_b": 6,
     "hand_target_error_b": 6,
   }
@@ -109,6 +110,9 @@ def _build_deploy_cfg(env) -> dict:
   # x/z values and clamp the interactive y slider.
   reach_cmd_cfg = env.cfg.commands["reach"]
   r = reach_cmd_cfg.ranges
+  # One shared commanded arm speed (m/s); dump the range so the deploy side can
+  # clamp the interactive speed command (keyboard/DDS) to what training saw.
+  speed_range = getattr(reach_cmd_cfg, "speed_range", (0.05, 0.50))
   commands = {
     "reach": {
       "ranges": {
@@ -118,7 +122,8 @@ def _build_deploy_cfg(env) -> dict:
         "right_x": [float(r.right_x[0]), float(r.right_x[1])],
         "right_y": [float(r.right_y[0]), float(r.right_y[1])],
         "right_z": [float(r.right_z[0]), float(r.right_z[1])],
-      }
+      },
+      "speed_range": [float(speed_range[0]), float(speed_range[1])],
     }
   }
 
