@@ -1,0 +1,14 @@
+# Keep the build context small (mjlab/.git alone is ~326 MB).
+.git
+.gitignore
+wandb/
+logs/
+tea_debug.log
+*.pt
+**/__pycache__/
+*.pyc
+*.egg-info/
+build/
+simulate/build/
+.venv/
+.claude/
