@@ -25,27 +25,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install the CUDA 12.8 torch build first so the mjlab dep resolver is satisfied
 # by it (mjlab needs torch>=2.7.0) instead of pulling a CPU wheel.
-RUN python3.10 -m pip install --no-cache-dir --upgrade pip \
-    && python3.10 -m pip install --no-cache-dir \
-       torch --index-url https://download.pytorch.org/whl/cu128
-
-# Pin the exact stack that works together. mujoco-warp==3.5.0 needs mujoco==3.7.0
-# (which defines mjENBL_MULTICCD); an unpinned resolve grabs an incompatible
-# mujoco and blows up at import with "mjtEnableBit has no attribute mjENBL_MULTICCD".
-RUN python3.10 -m pip install --no-cache-dir \
-      "mujoco==3.7.0" \
-      "mujoco-warp==3.5.0" \
-      "warp-lang==1.12.1" \
-      "rsl-rl-lib==5.0.1" \
-      "numpy==2.2.6"
+RUN python3.10 -m pip install --no-cache-dir --upgrade pip
 
 WORKDIR /workspace/mjlab
+
+# Install the EXACT frozen stack from a known-good env, not a fresh resolve.
+# mjlab==1.2.0 under-declares its runtime deps (scipy, etc.) and its
+# bleeding-edge deps (mujoco/mujoco-warp) drift when unpinned, so letting pip
+# re-resolve breaks. requirements-lock.txt pins all 180 packages (incl. the
+# cu128 torch via its --extra-index-url line). Copy it alone first so this big
+# layer stays cached across source edits.
+COPY requirements-lock.txt /workspace/mjlab/requirements-lock.txt
+RUN python3.10 -m pip install --no-cache-dir -r requirements-lock.txt
+
 COPY . /workspace/mjlab
 
-# Editable install of unitree_rl_mjlab: pulls mjlab==1.2.0 and makes the local
-# `src` task package importable (train.py does `import src.tasks`). The pinned
-# deps above already satisfy mjlab's ranges, so pip won't change them.
-RUN python3.10 -m pip install --no-cache-dir -e .
+# Register the local `src` task package (train.py does `import src.tasks`).
+# --no-deps: the lockfile already provides everything; don't let pip re-resolve.
+RUN python3.10 -m pip install --no-cache-dir --no-deps -e .
 
 # Training writes checkpoints + policy.onnx + deploy.yaml here; mount a host
 # volume over it to keep the artifacts after the container exits.
