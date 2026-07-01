@@ -29,11 +29,22 @@ RUN python3.10 -m pip install --no-cache-dir --upgrade pip \
     && python3.10 -m pip install --no-cache-dir \
        torch --index-url https://download.pytorch.org/whl/cu128
 
+# Pin the exact stack that works together. mujoco-warp==3.5.0 needs mujoco==3.7.0
+# (which defines mjENBL_MULTICCD); an unpinned resolve grabs an incompatible
+# mujoco and blows up at import with "mjtEnableBit has no attribute mjENBL_MULTICCD".
+RUN python3.10 -m pip install --no-cache-dir \
+      "mujoco==3.7.0" \
+      "mujoco-warp==3.5.0" \
+      "warp-lang==1.12.1" \
+      "rsl-rl-lib==5.0.1" \
+      "numpy==2.2.6"
+
 WORKDIR /workspace/mjlab
 COPY . /workspace/mjlab
 
-# Editable install of unitree_rl_mjlab: pulls mjlab==1.2.0 + mujoco-warp==3.5.0
-# and makes the local `src` task package importable (train.py does `import src.tasks`).
+# Editable install of unitree_rl_mjlab: pulls mjlab==1.2.0 and makes the local
+# `src` task package importable (train.py does `import src.tasks`). The pinned
+# deps above already satisfy mjlab's ranges, so pip won't change them.
 RUN python3.10 -m pip install --no-cache-dir -e .
 
 # Training writes checkpoints + policy.onnx + deploy.yaml here; mount a host
