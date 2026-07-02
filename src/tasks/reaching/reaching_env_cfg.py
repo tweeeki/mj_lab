@@ -183,6 +183,28 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
         "bias_range": (-0.015, 0.015),
       },
     ),
+    # Sustained HORIZONTAL push on the torso (fwd/back = x, left/right = y),
+    # to train balance robustness against a carried / tilting load. Every few
+    # seconds a random horizontal force is applied for a short duration, then
+    # released (see mdp/events.py::push_torso_force). body_point_offset applies
+    # it above the CoM so the force also tilts the torso — the leverage a box
+    # held out front exerts. Training-only: NOT observed, so the obs vector and
+    # deploy contract are unchanged; the policy reacts via its IMU/proprio.
+    # The target body (torso) is bound per-robot in config/<robot>/env_cfgs.py.
+    "push_torso": EventTermCfg(
+      mode="step",
+      func=mdp.push_torso_force,
+      params={
+        "force_range_x": (-80.0, 80.0),   # forward / backward (N) — tune to robot mass
+        "force_range_y": (-80.0, 80.0),   # left / right (N)
+        "force_range_z": (0.0, 0.0),      # no vertical component (horizontal push only)
+        "torque_range": (0.0, 0.0),       # tilt comes from body_point_offset, not direct torque
+        "duration_s": (0.3, 0.8),         # how long each push is held
+        "cooldown_s": (2.0, 4.0),         # idle gap between pushes
+        "body_point_offset": (0.0, 0.0, 0.2),  # apply ~20 cm above CoM → tilt leverage
+        "asset_cfg": SceneEntityCfg("robot", body_names=()),  # Set per-robot (torso).
+      },
+    ),
   }
 
   ##
@@ -260,6 +282,22 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
     "joint_acc_l2": RewardTermCfg(func=envs_mdp.joint_acc_l2, weight=-2.5e-7),
     "joint_pos_limits": RewardTermCfg(func=envs_mdp.joint_pos_limits, weight=-10.0),
     "action_rate_l2": RewardTermCfg(func=envs_mdp.action_rate_l2, weight=-0.02),
+    # Extra penalty on ABRUPT leg motion (hip/knee/ankle), on top of the global
+    # joint_acc_l2 above — discourages the feet snapping/shuffling, especially
+    # kicking a foot into the air. joint_acc (jerk-like) is used on purpose
+    # rather than joint_vel: it punishes *abruptness* while still allowing the
+    # smooth leg motion needed to RECOVER from the push_torso disturbance above.
+    # Tension knob: too heavy and the robot can't rebalance; too light and the
+    # feet stay twitchy. Start ~4x the global term, tune against push strength.
+    "leg_joint_acc_l2": RewardTermCfg(
+      func=envs_mdp.joint_acc_l2,
+      weight=-1.0e-6,
+      params={
+        "asset_cfg": SceneEntityCfg(
+          "robot", joint_names=(r".*(hip|knee|ankle).*",)
+        ),
+      },
+    ),
   }
 
   ##

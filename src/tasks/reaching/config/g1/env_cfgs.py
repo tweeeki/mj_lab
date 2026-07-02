@@ -56,6 +56,9 @@ def unitree_g1_reach_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   )
   cfg.events["foot_friction"].params["asset_cfg"].geom_names = geom_names
 
+  # Push the torso link (fwd/back/left/right sustained force for balance robustness).
+  cfg.events["push_torso"].params["asset_cfg"].body_names = ("torso_link",)
+
   # Posture stds — arms are excluded by the asset_cfg regex so they are
   # fully free to move. Everything else is held to the default keyframe.
   cfg.rewards["posture"].params["std"] = {
