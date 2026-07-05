@@ -251,3 +251,25 @@ def feet_motion_l2(
   asset: Entity = env.scene[asset_cfg.name]
   vel = asset.data.site_lin_vel_w[:, asset_cfg.site_ids]
   return torch.sum(torch.square(vel), dim=(1, 2))
+
+
+def self_collision_cost(
+  env: "ManagerBasedRlEnv",
+  sensor_name: str,
+  force_threshold: float = 10.0,
+) -> torch.Tensor:
+  """Penalize self-collisions (copied from the velocity task).
+
+  When the sensor provides force history (from ``history_length > 0``),
+  counts substeps where any contact force exceeds *force_threshold*.
+  Falls back to the instantaneous ``found`` count otherwise.
+  """
+  sensor = env.scene[sensor_name]
+  data = sensor.data
+  if data.force_history is not None:
+    # force_history: [B, N, H, 3]
+    force_mag = torch.norm(data.force_history, dim=-1)  # [B, N, H]
+    hit = (force_mag > force_threshold).any(dim=1)  # [B, H]
+    return hit.sum(dim=-1).float()  # [B]
+  assert data.found is not None
+  return data.found.squeeze(-1)

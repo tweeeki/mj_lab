@@ -7,8 +7,11 @@ from src.assets.robots import (
 from src.assets.robots.unitree_g1.g1_constants import HOME_KEYFRAME
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
+from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from src.tasks.reaching_v2.reaching_env_cfg import make_reaching_env_cfg
+
+import src.tasks.reaching_v2.mdp as mdp
 
 
 _LEFT_HAND_SITE = "left_palm"
@@ -69,9 +72,21 @@ def unitree_g1_reach_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   )
   cfg.events["foot_friction"].params["asset_cfg"].geom_names = geom_names
 
-  # Feet-ground contact sensor (same wiring as the velocity task) — feeds the
-  # feet_contact reward. Scene-level only: does NOT touch the observation
-  # vector, so the deploy contract is unchanged.
+  # Contact sensors (same wiring as the velocity task). Scene-level only: they
+  # do NOT touch the observation vector, so the deploy contract is unchanged.
+  # - feet_ground_contact feeds the feet_contact reward.
+  # - self_collision feeds the self_collisions penalty below: physical
+  #   self-collision is already simulated (FULL_COLLISION), but without this
+  #   penalty the policy is free to lean the elbows/arms against the torso.
+  self_collision_cfg = ContactSensorCfg(
+    name="self_collision",
+    primary=ContactMatch(mode="subtree", pattern="pelvis", entity="robot"),
+    secondary=ContactMatch(mode="subtree", pattern="pelvis", entity="robot"),
+    fields=("found", "force"),
+    reduce="none",
+    num_slots=1,
+    history_length=4,
+  )
   cfg.scene.sensors = (cfg.scene.sensors or ()) + (
     ContactSensorCfg(
       name="feet_ground_contact",
@@ -86,6 +101,12 @@ def unitree_g1_reach_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
       num_slots=1,
       track_air_time=True,
     ),
+    self_collision_cfg,
+  )
+  cfg.rewards["self_collisions"] = RewardTermCfg(
+    func=mdp.self_collision_cost,
+    weight=-1.0,
+    params={"sensor_name": self_collision_cfg.name, "force_threshold": 10.0},
   )
 
   # Balance-anchor wiring: foot sites for the feet_motion penalty, and the
