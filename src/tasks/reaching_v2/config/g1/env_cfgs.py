@@ -29,7 +29,16 @@ def unitree_g1_reach_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
   joint_pos_action = cfg.actions["joint_pos"]
   assert isinstance(joint_pos_action, JointPositionActionCfg)
-  joint_pos_action.scale = G1_ACTION_SCALE
+  # v2: LOCK the forearms — zero action authority on wrist roll/pitch/yaw
+  # (both arms) pins those motor targets to the default pose. The policy still
+  # outputs 29 actions and obs stays 112, so the deploy contract is unchanged;
+  # the C++ wrist-override can still drive wrist_roll in deploy because it
+  # overwrites the motor target AFTER the policy write.
+  wrist_locked_scale = dict(G1_ACTION_SCALE)
+  for joint_expr in list(wrist_locked_scale):
+    if "wrist" in joint_expr:
+      wrist_locked_scale[joint_expr] = 0.0
+  joint_pos_action.scale = wrist_locked_scale
 
   # Wire up hand sites for command + observations + rewards.
   reach_cmd = cfg.commands["reach"]
