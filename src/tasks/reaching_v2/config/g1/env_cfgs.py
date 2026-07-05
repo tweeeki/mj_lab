@@ -44,11 +44,15 @@ def unitree_g1_reach_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
 
   for rew_name in (
     "reach_distance",
+    "reach_distance_l2",
     "reach_success_bonus",
     "waypoint_track",
   ):
     cfg.rewards[rew_name].params["left_hand_site"] = _LEFT_HAND_SITE
     cfg.rewards[rew_name].params["right_hand_site"] = _RIGHT_HAND_SITE
+
+  # Mild torso push (±16 N, 1/5 of the original) — bound to the torso link.
+  cfg.events["push_torso"].params["asset_cfg"].body_names = ("torso_link",)
 
   # Foot friction (feet still carry the standing robot).
   geom_names = tuple(

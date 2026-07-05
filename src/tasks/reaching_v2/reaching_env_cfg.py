@@ -7,8 +7,10 @@ v2 differences from ``tasks/reaching``: the lower body is anchored by
 non-saturating penalties (base height, vertical root velocity, stance joint
 deviation, feet contact + feet motion) so the policy cannot drift into the
 crouch / wide-stance / foot-shuffle stability hacks the exp-shaped ``posture``
-reward allowed. The torso push event and the redundant ``reach_distance_l2``
-term were removed. Training-only changes: the observation vector is unchanged.
+reward allowed. The torso push is kept but at 1/5 strength (±16 N — absorbable
+without stepping). The arm/reach rewards (incl. the 7-D speed command +
+``waypoint_track``) are identical to the proven v2-dev recipe. Training-only
+changes: the observation vector is unchanged.
 """
 
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -189,10 +191,26 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
         "bias_range": (-0.015, 0.015),
       },
     ),
-    # NOTE (v2): the torso push event (mdp/events.py::push_torso_force) is
-    # deliberately NOT registered here. Strong pushes force stepping recovery,
-    # which fights the planted-feet rewards below. Re-add it (at reduced
-    # magnitude, ~±40 N) when the box-tilting work resumes.
+    # Mild sustained horizontal torso push for sim2real robustness. v2 runs
+    # this at 1/5 of the original ±80 N: at ±16 N the robot can absorb the
+    # push with ankle/hip torque alone — no step needed — so it does NOT fight
+    # the planted-feet rewards below, it teaches the policy to lean against
+    # small disturbances (model mismatch, cable tugs) instead of shuffling.
+    # Delete this entry for a fully disturbance-free run.
+    "push_torso": EventTermCfg(
+      mode="step",
+      func=mdp.push_torso_force,
+      params={
+        "force_range_x": (-16.0, 16.0),   # forward / backward (N)
+        "force_range_y": (-16.0, 16.0),   # left / right (N)
+        "force_range_z": (0.0, 0.0),      # horizontal only
+        "torque_range": (0.0, 0.0),
+        "duration_s": (0.3, 0.8),
+        "cooldown_s": (2.0, 4.0),
+        "body_point_offset": (0.0, 0.0, 0.2),
+        "asset_cfg": SceneEntityCfg("robot", body_names=()),  # Set per-robot (torso).
+      },
+    ),
   }
 
   ##
@@ -209,6 +227,16 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
         "left_hand_site": "",  # Set per-robot.
         "right_hand_site": "",  # Set per-robot.
         "std": 0.25,
+        "asset_cfg": SceneEntityCfg("robot"),
+      },
+    ),
+    "reach_distance_l2": RewardTermCfg(
+      func=mdp.reach_distance_l2,
+      weight=-1.0,
+      params={
+        "command_name": "reach",
+        "left_hand_site": "",  # Set per-robot.
+        "right_hand_site": "",  # Set per-robot.
         "asset_cfg": SceneEntityCfg("robot"),
       },
     ),
