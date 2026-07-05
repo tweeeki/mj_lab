@@ -111,11 +111,16 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
   ##
 
   actions: dict[str, ActionTermCfg] = {
-    "joint_pos": JointPositionActionCfg(
+    # v2: EMA-filtered joint-position action — trains the policy WITH the
+    # deploy controller's whole-body action low-pass in the loop, so it stays
+    # stable under that lag on sim2sim/sim2real (see mdp/actions.py). Alpha is
+    # randomized per episode across the deployable band.
+    "joint_pos": mdp.EmaJointPositionActionCfg(
       entity_name="robot",
       actuator_names=(".*",),
       scale=0.25,  # Override per-robot.
       use_default_offset=True,
+      ema_alpha_1khz_range=(0.06, 0.5),
     )
   }
 
