@@ -489,6 +489,7 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
       azimuth=90.0,
     ),
     sim=SimulationCfg(
+      njmax=200,
       mujoco=MujocoCfg(
         timestep=0.005,
         iterations=10,
