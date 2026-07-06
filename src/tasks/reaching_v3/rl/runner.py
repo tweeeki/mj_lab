@@ -118,6 +118,23 @@ def _build_deploy_cfg(env) -> dict:
   speed_range = getattr(reach_cmd_cfg, "speed_range", (0.05, 0.50))
   commands = {
     "reach": {
+      # reach-dev deploy features (State_Reach.cpp / State_RLBase.cpp). These
+      # used to be hand-added after every export and were silently lost on
+      # re-export; v3 emits them with the known-good v2 values.
+      "dev": {
+        "seed_at_current_hand": True,
+        "home_on_entry": True,
+        "home_left": [0.35, 0.12, 0.20],
+        "home_right": [0.35, -0.12, 0.20],
+        "home_slew_mps": 0.05,
+        "auto_hold": False,
+        "hold_enter_m": 0.01,
+        "hold_debounce_s": 0.3,
+        "hold_exit_m": 0.02,
+        "hold_blend_s": 0.2,
+        "wrist_override": True,
+        "wrist_max_joint_delta": 0.004,
+      },
       "ranges": {
         "left_x": [float(r.left_x[0]), float(r.left_x[1])],
         "left_y": [float(r.left_y[0]), float(r.left_y[1])],
@@ -139,7 +156,11 @@ def _build_deploy_cfg(env) -> dict:
       "joint_names": [".*"],
       "scale": action_scale,
       "offset": default_joint_pos,
-      "clip": [[-1.0, 1.0]] * num_joints,
+      # v3: null (was [[-1,1]]*n). Training runs unclipped, and the deploy side
+      # applies this clip to the FINAL target (offset + scale*action), so ±1 rad
+      # silently saturated joints whose default is near 1 (elbow default 0.87).
+      # The C++ joint_actions.h skips clamping when clip is null.
+      "clip": None,
       "joint_ids": None,
     }
   }
@@ -160,6 +181,12 @@ def _build_deploy_cfg(env) -> dict:
   return {
     "joint_ids_map": list(range(num_joints)),  # identity; fix here if sim2sim misfires
     "step_dt": float(env.step_dt),
+    # Deploy-side whole-body action EMA (State_RLBase.cpp). 0.1 is inside the
+    # trained ema_alpha_1khz_range band, so it's a free hardware knob up to 0.5
+    # (higher = less filter lag). Emitted here so re-exports stop dropping it.
+    "action_smooth_alpha": 0.1,
+    # Smooth kp/kd handover on state entry (State_RLBase.cpp gain ramp).
+    "gain_ramp_s": 0.5,
     "stiffness": stiffness,
     "damping": damping,
     "default_joint_pos": default_joint_pos,
