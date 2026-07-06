@@ -8,9 +8,14 @@ non-saturating penalties (base height, vertical root velocity, stance joint
 deviation, feet contact + feet motion) so the policy cannot drift into the
 crouch / wide-stance / foot-shuffle stability hacks the exp-shaped ``posture``
 reward allowed. The torso push is kept but at 1/5 strength (±16 N — absorbable
-without stepping). The arm/reach rewards (incl. the 7-D speed command +
-``waypoint_track``) are identical to the proven v2-dev recipe. Training-only
-changes: the observation vector is unchanged.
+without stepping). The 7-D arm-speed command is kept.
+
+Arm tracking reward (2026-07-06): the exponential kernels (``reach_distance`` +
+``waypoint_track``) were replaced with a single LINEAR L1 distance penalty
+(``reach_distance_l1``, weight -5.0), imitating SlimZorgLab's proven
+``-5*(dist_L+dist_R)``. Constant, distance-independent gain — no sharp
+near-target corrector — to remove the measured ~4-5 Hz sim2real arm limit cycle.
+All training-only: the observation/action contract is unchanged (deploy-safe).
 """
 
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -224,14 +229,21 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
 
   rewards = {
     "alive": RewardTermCfg(func=envs_mdp.is_alive, weight=1.0),
-    "reach_distance": RewardTermCfg(
-      func=mdp.reach_distance,
-      weight=4.0,
+    # 2026-07-06 LINEAR TRACKING — imitate SlimZorgLab's `-5*(dist_L+dist_R)`.
+    # Replaced the exponential reach_distance kernel with a LINEAR L1 distance
+    # penalty: its gradient magnitude is constant with distance, so it never
+    # trains the sharp high-gain corrector the exponential kernels did (that
+    # peaked near-target gradient was the root of the measured ~4-5 Hz sim2real
+    # arm limit cycle). Still reads the moving waypoint (cmd[:,0:6]), so the
+    # commanded arm speed is enforced — just at a bounded, distance-independent
+    # gain. See mdp/rewards.py::reach_distance_l1.
+    "reach_distance_l1": RewardTermCfg(
+      func=mdp.reach_distance_l1,
+      weight=-5.0,
       params={
         "command_name": "reach",
         "left_hand_site": "",  # Set per-robot.
         "right_hand_site": "",  # Set per-robot.
-        "std": 0.25,
         "asset_cfg": SceneEntityCfg("robot"),
       },
     ),
@@ -256,25 +268,12 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
         "asset_cfg": SceneEntityCfg("robot"),
       },
     ),
-    # Tracking of the MOVING waypoint → enforces the commanded arm speed.
-    # See mdp/rewards.py::waypoint_track.
-    # 2026-07-06 ANTI-OSCILLATION: std 0.05 -> 0.25 (matches the pickup task's
-    # single loose tracking kernel). The near-target reward gradient scales
-    # ~1/std^2, so 0.05 trained a feedback gain ~25x steeper than pickup's ->
-    # thin phase margin -> the measured ~5 Hz sim2real limit cycle. 0.25 keeps
-    # the speed command meaningful at a fraction of the gain. reach_distance
-    # above (also std 0.25) stays as broad guidance.
-    "waypoint_track": RewardTermCfg(
-      func=mdp.waypoint_track,
-      weight=4.0,
-      params={
-        "command_name": "reach",
-        "left_hand_site": "",  # Set per-robot.
-        "right_hand_site": "",  # Set per-robot.
-        "std": 0.25,
-        "asset_cfg": SceneEntityCfg("robot"),
-      },
-    ),
+    # (Removed 2026-07-06) The exponential `waypoint_track` kernel (std 0.05,
+    # later 0.25) is gone — it was a redundant SECOND tracking term on the same
+    # moving waypoint and its peaked gradient was the main high-gain driver of
+    # the oscillation. reach_distance_l1 above already tracks that waypoint
+    # (linear gain), so the commanded arm speed is still enforced without the
+    # sharp corrector.
     "posture": RewardTermCfg(
       func=envs_mdp.posture,
       weight=2.0,

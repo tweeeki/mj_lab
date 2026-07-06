@@ -92,6 +92,35 @@ class reach_distance_l2(_HandSites):
     )
 
 
+class reach_distance_l1(_HandSites):
+  """Sum of Euclidean hand→target distances — a LINEAR penalty term.
+
+  ``value = |d_L| + |d_R|`` (metres); use a NEGATIVE weight so the reward is
+  ``-k * (|d_L| + |d_R|)`` — exactly the shape of SlimZorgLab's proven
+  ``-5 * (dist_L + dist_R)`` tracking term. The gradient magnitude is CONSTANT
+  with distance (unlike the exponential kernels, whose gradient peaks near the
+  target and trains a sharp high-gain corrector — the root of the ~4-5 Hz
+  sim2real arm limit cycle). ``self._targets_world`` reads the moving waypoint
+  (cmd[:, 0:6]), so this still enforces the commanded arm speed, just at a
+  bounded, distance-independent gain.
+  """
+
+  def __call__(
+    self,
+    env: "ManagerBasedRlEnv",
+    command_name: str,
+    left_hand_site: str,
+    right_hand_site: str,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  ) -> torch.Tensor:
+    del command_name, left_hand_site, right_hand_site, asset_cfg
+    left_t, right_t = self._targets_world(env)
+    left_h, right_h = self._hands_world(env)
+    d_left = torch.norm(left_h - left_t, dim=-1)
+    d_right = torch.norm(right_h - right_t, dim=-1)
+    return d_left + d_right
+
+
 class reach_success_bonus(_HandSites):
   """Binary bonus: both hands within ``threshold`` meters of their targets."""
 

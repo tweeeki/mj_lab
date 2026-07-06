@@ -55,10 +55,9 @@ def unitree_g1_reach_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.observations["critic"].terms[obs_name].params["right_hand_site"] = _RIGHT_HAND_SITE
 
   for rew_name in (
-    "reach_distance",
+    "reach_distance_l1",
     "reach_distance_l2",
     "reach_success_bonus",
-    "waypoint_track",
   ):
     cfg.rewards[rew_name].params["left_hand_site"] = _LEFT_HAND_SITE
     cfg.rewards[rew_name].params["right_hand_site"] = _RIGHT_HAND_SITE
