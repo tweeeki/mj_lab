@@ -256,9 +256,14 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
         "asset_cfg": SceneEntityCfg("robot"),
       },
     ),
-    # Tight tracking of the MOVING waypoint → enforces the commanded arm speed.
-    # See mdp/rewards.py::waypoint_track. std is small (glue the palm to the
-    # waypoint); reach_distance above stays loose for broad guidance.
+    # Tracking of the MOVING waypoint → enforces the commanded arm speed.
+    # See mdp/rewards.py::waypoint_track.
+    # 2026-07-06 ANTI-OSCILLATION: std 0.05 -> 0.25 (matches the pickup task's
+    # single loose tracking kernel). The near-target reward gradient scales
+    # ~1/std^2, so 0.05 trained a feedback gain ~25x steeper than pickup's ->
+    # thin phase margin -> the measured ~5 Hz sim2real limit cycle. 0.25 keeps
+    # the speed command meaningful at a fraction of the gain. reach_distance
+    # above (also std 0.25) stays as broad guidance.
     "waypoint_track": RewardTermCfg(
       func=mdp.waypoint_track,
       weight=4.0,
@@ -266,7 +271,7 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
         "command_name": "reach",
         "left_hand_site": "",  # Set per-robot.
         "right_hand_site": "",  # Set per-robot.
-        "std": 0.05,
+        "std": 0.25,
         "asset_cfg": SceneEntityCfg("robot"),
       },
     ),
@@ -292,7 +297,9 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
     "is_terminated": RewardTermCfg(func=envs_mdp.is_terminated, weight=-5.0),
     "joint_acc_l2": RewardTermCfg(func=envs_mdp.joint_acc_l2, weight=-2.5e-7),
     "joint_pos_limits": RewardTermCfg(func=envs_mdp.joint_pos_limits, weight=-10.0),
-    "action_rate_l2": RewardTermCfg(func=envs_mdp.action_rate_l2, weight=-0.02),
+    # 2026-07-06 ANTI-OSCILLATION: -0.02 -> -0.05 (pickup's value). Taxes fast
+    # action changes 2.5x harder — a direct loop-gain / phase-margin knob.
+    "action_rate_l2": RewardTermCfg(func=envs_mdp.action_rate_l2, weight=-0.05),
     # Extra penalty on ABRUPT leg motion (hip/knee/ankle), on top of the global
     # joint_acc_l2 above — discourages the feet snapping/shuffling, especially
     # kicking a foot into the air. joint_acc (jerk-like) is used on purpose
