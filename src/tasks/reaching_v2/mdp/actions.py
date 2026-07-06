@@ -121,3 +121,76 @@ class EmaJointPositionAction(JointPositionAction):
     self._filt += self._alpha_sub * (target - self._filt)
     self._entity.set_joint_position_target(self._filt, joint_ids=self._target_ids)
     self._substep_i += 1
+
+
+@dataclass(kw_only=True)
+class DeltaArmEmaJointPositionActionCfg(EmaJointPositionActionCfg):
+  """EMA action where the ARM joints are driven as a rate-capped INCREMENTAL
+  (delta) target instead of an absolute one — the SlimZorgLab mechanism, in the
+  training loop so the policy LEARNS within the cap (a deploy-side rate cap on a
+  policy trained without it winds up and oscillates; a cap in the action space
+  is learned-around).
+
+  Arm columns ``[arm_joint_start, arm_joint_end)`` of the processed action are
+  integrated each policy step:
+
+      arm_target[t] = clamp(arm_target[t-1] + arm_delta_max_per_step * a,
+                            default ± arm_max_excursion)
+
+  with ``a = clamp(raw_action, -1, 1)``. So one 50 Hz policy step can move an arm
+  joint by at most ``arm_delta_max_per_step`` rad — a HARD rate cap of
+  ``arm_delta_max_per_step * policy_hz`` rad/s. A high-frequency oscillation is
+  then mechanically bounded to amplitude ≤ rate_cap / (2*pi*f). Legs + waist
+  (columns < arm_joint_start) stay ABSOLUTE so balance keeps full reaction speed.
+  The EMA + delay (inherited) still run on top, matching the deploy 1 kHz filter.
+
+  DEPLOY CONTRACT CHANGES: the deploy C++ must accumulate arm deltas the same
+  way (q_arm += arm_delta_max_per_step * clamp(raw,-1,1), clamped) before its
+  EMA. Obs/action DIMS are unchanged (last_action still sees the raw output), but
+  grabbing only the onnx is NOT enough this time — State_RLBase must be updated.
+  """
+
+  # 29-DoF trainer order: legs 0-11, waist 12-14, arms 15-28 (exclusive end).
+  arm_joint_start: int = 15
+  arm_joint_end: int = 29
+  # Max arm move per 50 Hz policy step. a=±1 -> ±this rad. 0.02 rad/step ~= a
+  # 1.0 rad/s hard cap (SlimZorg used ~0.31 rad/s). Lower = calmer/slower.
+  arm_delta_max_per_step: float = 0.02
+  # Anti-windup: clamp the integrated arm target to default ± this (rad).
+  arm_max_excursion: float = 2.0
+
+  def build(self, env: "ManagerBasedRlEnv") -> "DeltaArmEmaJointPositionAction":
+    return DeltaArmEmaJointPositionAction(self, env)
+
+
+class DeltaArmEmaJointPositionAction(EmaJointPositionAction):
+  """EmaJointPositionAction whose arm columns are a rate-capped integrator."""
+
+  def __init__(self, cfg: DeltaArmEmaJointPositionActionCfg, env: "ManagerBasedRlEnv"):
+    super().__init__(cfg=cfg, env=env)
+    self._d_cfg = cfg
+    self._arm = slice(cfg.arm_joint_start, cfg.arm_joint_end)
+    # `_offset` is the default joint pose (use_default_offset=True). Seed the
+    # arm integrator there and precompute the anti-windup clamp band.
+    self._arm_target = self._offset[:, self._arm].clone()
+    self._arm_lo = self._offset[:, self._arm] - cfg.arm_max_excursion
+    self._arm_hi = self._offset[:, self._arm] + cfg.arm_max_excursion
+
+  def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+    super().reset(env_ids)
+    ids = slice(None) if env_ids is None else env_ids
+    # Re-seed the integrator at the default pose so there is no jump at reset.
+    self._arm_target[ids] = self._offset[ids, self._arm]
+
+  def process_actions(self, actions: torch.Tensor) -> None:
+    # Parent computes the ABSOLUTE processed target (raw*scale+offset) and does
+    # the delay bookkeeping; it also fills `_raw_actions` with the policy output.
+    super().process_actions(actions)
+    # Overwrite the ARM columns with the rate-capped integrated delta target.
+    a = torch.clamp(self._raw_actions[:, self._arm], -1.0, 1.0)
+    self._arm_target = torch.clamp(
+      self._arm_target + self._d_cfg.arm_delta_max_per_step * a,
+      self._arm_lo,
+      self._arm_hi,
+    )
+    self._processed_actions[:, self._arm] = self._arm_target

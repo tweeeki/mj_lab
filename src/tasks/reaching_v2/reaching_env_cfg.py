@@ -116,16 +116,26 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
   ##
 
   actions: dict[str, ActionTermCfg] = {
-    # v2: EMA-filtered joint-position action — trains the policy WITH the
-    # deploy controller's whole-body action low-pass in the loop, so it stays
-    # stable under that lag on sim2sim/sim2real (see mdp/actions.py). Alpha is
-    # randomized per episode across the deployable band.
-    "joint_pos": mdp.EmaJointPositionActionCfg(
+    # 2026-07-06 RATE-CAPPED DELTA ARM ACTION (SlimZorgLab's other half).
+    # Legs+waist stay ABSOLUTE (fast balance); the ARM joints (15-28) are driven
+    # as a rate-capped integrator: one policy step moves an arm joint at most
+    # `arm_delta_max_per_step` rad. Because this cap is IN THE TRAINING LOOP, the
+    # policy learns to act within it (it never winds up against it the way the
+    # deploy-side slew limiter did), and a high-frequency arm oscillation is
+    # mechanically bounded to amplitude <= cap/(2*pi*f). The inherited EMA +
+    # delay still model the deploy 1 kHz filter. See mdp/actions.py.
+    # NOTE: deploy C++ (State_RLBase) must accumulate arm deltas the same way —
+    # onnx-only is NOT enough for this change.
+    "joint_pos": mdp.DeltaArmEmaJointPositionActionCfg(
       entity_name="robot",
       actuator_names=(".*",),
-      scale=0.25,  # Override per-robot.
+      scale=0.25,  # Used by legs/waist (absolute). Arm cols use the delta cap.
       use_default_offset=True,
       ema_alpha_1khz_range=(0.06, 0.5),
+      arm_joint_start=15,
+      arm_joint_end=29,
+      arm_delta_max_per_step=0.02,  # ~1.0 rad/s cap at 50 Hz; tune down if it rings.
+      arm_max_excursion=2.0,
     )
   }
 
@@ -299,6 +309,19 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
     # 2026-07-06 ANTI-OSCILLATION: -0.02 -> -0.05 (pickup's value). Taxes fast
     # action changes 2.5x harder — a direct loop-gain / phase-margin knob.
     "action_rate_l2": RewardTermCfg(func=envs_mdp.action_rate_l2, weight=-0.05),
+    # 2026-07-06 SlimZorg analog of its `-0.1*|action|` term: a mild ARM joint-
+    # velocity penalty. With the rate-capped delta arm action, discouraging arm
+    # speed further biases the policy toward slow, non-oscillatory motion without
+    # meaningfully slowing commanded reaches. Kept mild so reaches stay usable.
+    "arm_joint_vel": RewardTermCfg(
+      func=envs_mdp.joint_vel_l2,
+      weight=-2.5e-4,
+      params={
+        "asset_cfg": SceneEntityCfg(
+          "robot", joint_names=(r".*(shoulder|elbow|wrist).*",)
+        ),
+      },
+    ),
     # Extra penalty on ABRUPT leg motion (hip/knee/ankle), on top of the global
     # joint_acc_l2 above — discourages the feet snapping/shuffling, especially
     # kicking a foot into the air. joint_acc (jerk-like) is used on purpose
