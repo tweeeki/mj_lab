@@ -125,26 +125,21 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
   ##
 
   actions: dict[str, ActionTermCfg] = {
-    # 2026-07-06 RATE-CAPPED DELTA ARM ACTION (SlimZorgLab's other half).
-    # Legs+waist stay ABSOLUTE (fast balance); the ARM joints (15-28) are driven
-    # as a rate-capped integrator: one policy step moves an arm joint at most
-    # `arm_delta_max_per_step` rad. Because this cap is IN THE TRAINING LOOP, the
-    # policy learns to act within it (it never winds up against it the way the
-    # deploy-side slew limiter did), and a high-frequency arm oscillation is
-    # mechanically bounded to amplitude <= cap/(2*pi*f). The inherited EMA +
-    # delay still model the deploy 1 kHz filter. See mdp/actions.py.
-    # NOTE: deploy C++ (State_RLBase) must accumulate arm deltas the same way —
-    # onnx-only is NOT enough for this change.
-    "joint_pos": mdp.DeltaArmEmaJointPositionActionCfg(
+    # 2026-07-06 Phase 2: REVERTED the rate-capped DELTA arm action back to the
+    # absolute EMA action. The delta action is an integrator (to hold, the policy
+    # must output exactly zero increment forever) — it introduced a slow ORBIT /
+    # hunt around the target that no reward change could fix. The absolute EMA
+    # action was the best, non-orbiting base. Smoothness is now handled the
+    # right way — by the spectral-normalized actor (Phase 1, rl/spectral_mlp.py)
+    # that bounds the policy's Lipschitz constant — instead of by an in-loop rate
+    # cap. This is the deploy-matched whole-body EMA (per-episode alpha across the
+    # deployable band); deploy contract unchanged (onnx-only is enough again).
+    "joint_pos": mdp.EmaJointPositionActionCfg(
       entity_name="robot",
       actuator_names=(".*",),
-      scale=0.25,  # Used by legs/waist (absolute). Arm cols use the delta cap.
+      scale=0.25,  # Override per-robot.
       use_default_offset=True,
       ema_alpha_1khz_range=(0.06, 0.5),
-      arm_joint_start=15,
-      arm_joint_end=29,
-      arm_delta_max_per_step=0.02,  # ~1.0 rad/s cap at 50 Hz; tune down if it rings.
-      arm_max_excursion=2.0,
     )
   }
 

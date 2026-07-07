@@ -10,6 +10,11 @@ from mjlab.rl import (
 def unitree_g1_reach_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
   return RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
+      # Phase 1 (2026-07-06): spectral-normalized actor — bounds the policy
+      # network's Lipschitz constant so nearby states map to nearby actions,
+      # the literature's fix for sim2real high-frequency oscillation (see
+      # rl/spectral_mlp.py). Critic stays the plain MLPModel.
+      class_name="src.tasks.reaching_v2.rl.spectral_mlp:SpectralNormMLPModel",
       hidden_dims=(512, 256, 128),
       activation="elu",
       obs_normalization=True,
