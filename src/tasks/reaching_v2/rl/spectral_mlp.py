@@ -35,10 +35,8 @@ combine with the action-rate / arm_joint_vel reward penalties already in the tas
 
 from __future__ import annotations
 
-import copy
-
+import torch
 import torch.nn as nn
-from torch.nn.utils.parametrize import is_parametrized, remove_parametrizations
 from torch.nn.utils.parametrizations import spectral_norm
 
 from rsl_rl.models.mlp_model import MLPModel
@@ -60,12 +58,32 @@ class SpectralNormMLPModel(MLPModel):
       spectral_norm(lin)  # reparametrizes .weight -> weight/sigma(weight)
 
   def as_onnx(self, verbose: bool) -> nn.Module:
-    # Export a parametrization-FREE copy so the deployed ONNX is plain Linear
-    # layers with the (already normalized) weights baked in — no spectral-norm
-    # machinery, no deploy-side surprises. leave_parametrized=True writes the
-    # current normalized weight back as an ordinary Parameter.
-    baked = copy.deepcopy(self)
-    for m in baked.mlp.modules():
-      if isinstance(m, nn.Linear) and is_parametrized(m, "weight"):
-        remove_parametrizations(m, "weight", leave_parametrized=True)
-    return MLPModel.as_onnx(baked, verbose)
+    # ONNX export must NOT trace the spectral-norm reparametrization: its
+    # sigma computation uses aten::vdot, unsupported by the ONNX exporter, and
+    # the module can't be deepcopied. So we export with the BAKED (already
+    # normalized) weights as plain Linear layers: build a throwaway plain
+    # replica of self.mlp (reading `child.weight`, which returns the normalized
+    # weight), temporarily swap it in, export, then restore the trainable
+    # parametrized mlp. This never touches the optimizer's parameters (the
+    # originals live in the restored `orig`), so training continues unaffected,
+    # and the deployed ONNX is a clean plain-Linear graph.
+    plain_layers = []
+    for child in self.mlp:  # MLP is an nn.Sequential
+      if isinstance(child, nn.Linear):
+        lin = nn.Linear(
+          child.in_features, child.out_features, bias=child.bias is not None
+        )
+        with torch.no_grad():
+          lin.weight.copy_(child.weight.detach())  # normalized weight, baked
+          if child.bias is not None:
+            lin.bias.copy_(child.bias.detach())
+        plain_layers.append(lin.to(child.weight.device))
+      else:
+        plain_layers.append(child)  # activations: stateless, safe to reuse
+    plain = nn.Sequential(*plain_layers)
+    orig = self.mlp
+    self.mlp = plain
+    try:
+      return super().as_onnx(verbose)
+    finally:
+      self.mlp = orig
