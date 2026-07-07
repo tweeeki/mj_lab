@@ -93,16 +93,23 @@ class reach_distance_l2(_HandSites):
 
 
 class reach_distance_l1(_HandSites):
-  """Sum of Euclidean hand→target distances — a LINEAR penalty term.
+  """Sum of Euclidean hand→target distances with a DEADBAND — SlimZorgLab's
+  linear tracking term, made settle-friendly for the integrating delta action.
 
-  ``value = |d_L| + |d_R|`` (metres); use a NEGATIVE weight so the reward is
-  ``-k * (|d_L| + |d_R|)`` — exactly the shape of SlimZorgLab's proven
-  ``-5 * (dist_L + dist_R)`` tracking term. The gradient magnitude is CONSTANT
-  with distance (unlike the exponential kernels, whose gradient peaks near the
-  target and trains a sharp high-gain corrector — the root of the ~4-5 Hz
-  sim2real arm limit cycle). ``self._targets_world`` reads the moving waypoint
-  (cmd[:, 0:6]), so this still enforces the commanded arm speed, just at a
-  bounded, distance-independent gain.
+  ``value = max(0, |d_L| - tol) + max(0, |d_R| - tol)``; use a NEGATIVE weight
+  so the reward is ``-k * value`` — SlimZorg's proven ``-5*(dist_L+dist_R)``
+  linear pull OUTSIDE the tolerance, and FLAT (zero gradient) once a hand is
+  within ``tol`` of its target. The flat zone is the fix for the orbit: a plain
+  linear reward keeps pulling at full strength even at the target, so with the
+  integrating delta arm action the policy overshoots and hunts. Zeroing the
+  gradient inside ``tol`` makes "stop" optimal there (the arm actually holds,
+  driven still by the mild arm_joint_vel penalty; reach_distance_l2 gently
+  centers it on the true target). ``tol = 0`` reduces to the bare linear term.
+
+  ``self._targets_world`` reads the moving waypoint (cmd[:, 0:6]): the hand only
+  gets pulled when it falls more than ``tol`` off the current waypoint, so the
+  commanded arm speed is still followed (with ``tol`` of slack) and the term
+  becomes a pure hold once the waypoint stops at the goal.
   """
 
   def __call__(
@@ -111,6 +118,7 @@ class reach_distance_l1(_HandSites):
     command_name: str,
     left_hand_site: str,
     right_hand_site: str,
+    tolerance: float = 0.0,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
   ) -> torch.Tensor:
     del command_name, left_hand_site, right_hand_site, asset_cfg
@@ -118,7 +126,10 @@ class reach_distance_l1(_HandSites):
     left_h, right_h = self._hands_world(env)
     d_left = torch.norm(left_h - left_t, dim=-1)
     d_right = torch.norm(right_h - right_t, dim=-1)
-    return d_left + d_right
+    return (
+      torch.clamp(d_left - tolerance, min=0.0)
+      + torch.clamp(d_right - tolerance, min=0.0)
+    )
 
 
 class reach_success_bonus(_HandSites):

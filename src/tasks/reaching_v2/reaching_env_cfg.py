@@ -10,12 +10,21 @@ crouch / wide-stance / foot-shuffle stability hacks the exp-shaped ``posture``
 reward allowed. The torso push is kept but at 1/5 strength (±16 N — absorbable
 without stepping). The 7-D arm-speed command is kept.
 
-Arm tracking reward (2026-07-06): the exponential kernels (``reach_distance`` +
-``waypoint_track``) were replaced with a single LINEAR L1 distance penalty
-(``reach_distance_l1``, weight -5.0), imitating SlimZorgLab's proven
-``-5*(dist_L+dist_R)``. Constant, distance-independent gain — no sharp
-near-target corrector — to remove the measured ~4-5 Hz sim2real arm limit cycle.
-All training-only: the observation/action contract is unchanged (deploy-safe).
+Anti-oscillation recipe (2026-07-06), two independent halves:
+- SETTLE: the tracking reward is SlimZorgLab's LINEAR ``reach_distance_l1``
+  (-k*dist) with a 3 cm DEADBAND — full linear pull outside 3 cm, FLAT (zero
+  gradient) inside, so "stop" is optimal at the target. (A plain linear reward
+  with no deadband ORBITED: its gradient never vanishes, so with the integrating
+  delta action the arm hunts around the sphere and never stops.) The arm is held
+  still inside the deadband by the mild arm_joint_vel penalty; reach_distance_l2
+  centers it on the true target. The tight ``waypoint_track`` kernel was removed.
+- DON'T RING FAST: the ARM action is a rate-capped DELTA (see mdp/actions.py::
+  DeltaArmEmaJointPositionAction) — legs/waist stay absolute for balance. The
+  cap is in the training loop so the policy learns within it; any residual
+  high-freq ring is kinematically bounded to <= cap/(2*pi*f).
+Reward changes are training-only; the DELTA ARM ACTION changes the deploy
+contract — State_RLBase must accumulate arm deltas the same way (onnx-only is
+NOT enough for a delta-action policy).
 """
 
 from mjlab.envs import ManagerBasedRlEnvCfg
@@ -239,14 +248,17 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
 
   rewards = {
     "alive": RewardTermCfg(func=envs_mdp.is_alive, weight=1.0),
-    # 2026-07-06 LINEAR TRACKING — imitate SlimZorgLab's `-5*(dist_L+dist_R)`.
-    # Replaced the exponential reach_distance kernel with a LINEAR L1 distance
-    # penalty: its gradient magnitude is constant with distance, so it never
-    # trains the sharp high-gain corrector the exponential kernels did (that
-    # peaked near-target gradient was the root of the measured ~4-5 Hz sim2real
-    # arm limit cycle). Still reads the moving waypoint (cmd[:,0:6]), so the
-    # commanded arm speed is enforced — just at a bounded, distance-independent
-    # gain. See mdp/rewards.py::reach_distance_l1.
+    # SlimZorgLab LINEAR tracking + DEADBAND (2026-07-06). Keeps SlimZorg's
+    # decisive constant -k*dist pull OUTSIDE 3 cm, but goes FLAT (zero gradient)
+    # once a hand is within 3 cm — the fix for the orbit. A plain linear reward
+    # keeps pulling at full strength even at the target, so with the integrating
+    # delta arm action the policy overshoots and hunts forever. The deadband
+    # removes that pull near the target so "stop" is optimal there; the arm is
+    # held still by the mild arm_joint_vel penalty, and reach_distance_l2 below
+    # (gradient -> 0 only at the exact target) gently centers it on the true
+    # target rather than anywhere inside the 3 cm shell. Reads the moving
+    # waypoint (cmd[:,0:6]) so the commanded arm speed is followed (with 3 cm of
+    # slack) and it becomes a pure hold once the waypoint stops at the goal.
     "reach_distance_l1": RewardTermCfg(
       func=mdp.reach_distance_l1,
       weight=-5.0,
@@ -254,6 +266,7 @@ def make_reaching_env_cfg() -> ManagerBasedRlEnvCfg:
         "command_name": "reach",
         "left_hand_site": "",  # Set per-robot.
         "right_hand_site": "",  # Set per-robot.
+        "tolerance": 0.03,  # 3 cm deadband: flat/no pull inside this radius.
         "asset_cfg": SceneEntityCfg("robot"),
       },
     ),
