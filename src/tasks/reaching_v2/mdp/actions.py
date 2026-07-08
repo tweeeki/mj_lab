@@ -37,6 +37,7 @@ from mjlab.envs.mdp.actions.actions import (
   JointPositionAction,
   JointPositionActionCfg,
 )
+from mjlab.utils.lab_api.string import resolve_matching_names
 
 if TYPE_CHECKING:
   from mjlab.envs import ManagerBasedRlEnv
@@ -58,6 +59,15 @@ class EmaJointPositionActionCfg(JointPositionActionCfg):
   # the new one (up to one full 20 ms step = `decimation` substeps late).
   delay_substeps_range: tuple[int, int] = (0, 4)
 
+  # Joints matching these regexes skip the EMA entirely (alpha forced to 1.0 =
+  # fully reactive). Intended for the LEGS of a WALKING policy: the low-pass
+  # that tames the arms adds ~15-20 ms of lag that stops the legs from catching
+  # balance / placing a crisp step (the reactivity-vs-smoothness trade-off is
+  # well documented for RL action filters). Default () = every joint smoothed,
+  # i.e. UNCHANGED reaching_v2 behavior. A leg-reactive policy must be deployed
+  # with a controller that EMAs only the arm joints, not all 29.
+  reactive_joint_names: tuple[str, ...] = ()
+
   def build(self, env: "ManagerBasedRlEnv") -> "EmaJointPositionAction":
     return EmaJointPositionAction(self, env)
 
@@ -69,7 +79,19 @@ class EmaJointPositionAction(JointPositionAction):
     super().__init__(cfg=cfg, env=env)
     self._ema_cfg = cfg
     self._physics_dt_ms = env.physics_dt * 1000.0
-    self._alpha_sub = torch.zeros(env.num_envs, 1, device=env.device)
+    # Resolve which action columns are "reactive" (no EMA). Empty -> none, and
+    # the alpha stays a per-env scalar (N, 1) so reach behaves exactly as before.
+    self._reactive_cols: torch.Tensor | None = None
+    if cfg.reactive_joint_names:
+      idx, _ = resolve_matching_names(
+        list(cfg.reactive_joint_names), self._target_names
+      )
+      if idx:
+        self._reactive_cols = torch.tensor(
+          sorted(idx), device=env.device, dtype=torch.long
+        )
+    alpha_width = self._action_dim if self._reactive_cols is not None else 1
+    self._alpha_sub = torch.zeros(env.num_envs, alpha_width, device=env.device)
     self._delay_sub = torch.zeros(env.num_envs, 1, dtype=torch.long, device=env.device)
     self._filt: torch.Tensor | None = None
     self._prev_target: torch.Tensor | None = None
@@ -86,7 +108,15 @@ class EmaJointPositionAction(JointPositionAction):
     a_1k = torch.exp(math.log(lo) + u * (math.log(hi) - math.log(lo)))
     # Same continuous time constant as the 1 kHz deploy filter:
     # (1 - a_sub) = (1 - a_1k)^(substep_ms / 1 ms)
-    self._alpha_sub[env_ids] = 1.0 - (1.0 - a_1k) ** self._physics_dt_ms
+    a_sub = 1.0 - (1.0 - a_1k) ** self._physics_dt_ms  # (n, 1)
+    if self._reactive_cols is None:
+      self._alpha_sub[env_ids] = a_sub
+    else:
+      # Per-joint alpha: broadcast the sampled value to all joints, then force
+      # the reactive (leg) columns to 1.0 so they track the target with no lag.
+      alpha = a_sub.expand(n, self._alpha_sub.shape[1]).clone()  # (n, J)
+      alpha[:, self._reactive_cols] = 1.0
+      self._alpha_sub[env_ids] = alpha
     self._delay_sub[env_ids] = torch.randint(dlo, dhi + 1, (n, 1), device=dev)
 
   def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:

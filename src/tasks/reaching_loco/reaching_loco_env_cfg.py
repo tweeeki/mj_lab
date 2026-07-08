@@ -22,6 +22,7 @@ from mjlab.envs import mdp as envs_mdp
 from mjlab.envs.mdp import dr
 from mjlab.managers.action_manager import ActionTermCfg
 from mjlab.managers.command_manager import CommandTermCfg
+from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.event_manager import EventTermCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
@@ -134,10 +135,14 @@ def make_reaching_loco_env_cfg() -> ManagerBasedRlEnvCfg:
   }
 
   ##
-  # Actions — whole-body deploy-matched EMA (same as reaching_v2). Wrists locked
-  # per-robot. Legs get the EMA too (the deploy controller EMAs all 29 joints).
+  # Actions — EMA on the ARMS (deploy anti-oscillation), REACTIVE legs.
   ##
-
+  # 2026-07-08: the arms keep the deploy-matched EMA that killed the sim2real
+  # oscillation, but the LEGS (+ waist) are made reactive (alpha=1.0, no EMA).
+  # The ~15-20 ms filter lag was stopping the legs from catching balance and
+  # placing a crisp step (reactivity-vs-smoothness trade-off). NOTE: this means
+  # the reaching_loco deploy controller must EMA only the arm joints, not all 29
+  # — a deliberate change from reaching_v2's whole-body EMA (deploy is unbuilt).
   actions: dict[str, ActionTermCfg] = {
     "joint_pos": rmdp.EmaJointPositionActionCfg(
       entity_name="robot",
@@ -145,6 +150,7 @@ def make_reaching_loco_env_cfg() -> ManagerBasedRlEnvCfg:
       scale=0.25,  # Override per-robot (wrists -> 0).
       use_default_offset=True,
       ema_alpha_1khz_range=(0.06, 0.5),
+      reactive_joint_names=_NON_ARM,  # legs + waist: no EMA lag (see above).
     )
   }
 
@@ -424,6 +430,39 @@ def make_reaching_loco_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
   }
 
+  ##
+  # Curriculum — velocity command (learnability, per 2026-07-08 research).
+  ##
+  # The robot was toppling instead of stepping because it was asked for the full
+  # velocity range from step 0. Every humanoid-loco framework ramps this: start
+  # with a GENTLE range (learn a slow walk / step-in-place first), then open up
+  # to normal walking speed once flat-ground gait is solid. The final stage caps
+  # forward speed at 1.0 m/s (~normal human walk) — no sprinting.
+  curriculum: dict[str, CurriculumTermCfg] = {
+    "command_vel": CurriculumTermCfg(
+      func=vmdp.commands_vel,
+      params={
+        "command_name": "twist",
+        "velocity_stages": [
+          # Stage 0 (from step 0): gentle — slow walk, mild turning.
+          {
+            "step": 0,
+            "lin_vel_x": (-0.3, 0.5),
+            "lin_vel_y": (-0.2, 0.2),
+            "ang_vel_z": (-0.5, 0.5),
+          },
+          # Stage 1 (~iter 1500): open up to capped normal walking speed.
+          {
+            "step": 1500 * 24,
+            "lin_vel_x": (-0.5, 1.0),
+            "lin_vel_y": (-0.5, 0.5),
+            "ang_vel_z": (-1.0, 1.0),
+          },
+        ],
+      },
+    ),
+  }
+
   return ManagerBasedRlEnvCfg(
     scene=SceneCfg(
       terrain=TerrainEntityCfg(terrain_type="plane"),
@@ -437,7 +476,7 @@ def make_reaching_loco_env_cfg() -> ManagerBasedRlEnvCfg:
     events=events,
     rewards=rewards,
     terminations=terminations,
-    curriculum={},
+    curriculum=curriculum,
     metrics={},
     viewer=ViewerConfig(
       origin_type=ViewerConfig.OriginType.ASSET_BODY,
