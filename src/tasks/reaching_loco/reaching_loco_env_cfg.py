@@ -156,7 +156,9 @@ def make_reaching_loco_env_cfg() -> ManagerBasedRlEnvCfg:
     "twist": vmdp.UniformVelocityCommandCfg(
       entity_name="robot",
       resampling_time_range=(3.0, 8.0),
-      rel_standing_envs=0.2,  # 20% of envs commanded to stand (learn to hold still)
+      rel_standing_envs=0.0,  # 2026-07-08: was 0.2. Standing was the lazy escape
+      # (no-command envs let the policy sit still and still collect reach reward).
+      # Force every env to carry a walk command so it MUST move to earn reward.
       heading_command=True,
       heading_control_stiffness=0.5,
       debug_vis=True,
@@ -263,14 +265,18 @@ def make_reaching_loco_env_cfg() -> ManagerBasedRlEnvCfg:
 
   rewards = {
     # -- Locomotion (from the velocity task) --------------------------------
+    # 2026-07-08: track weights 1.0 -> 3.0. The policy was parking in a "stand
+    # still + reach" optimum (walking barely paid vs the -200 fall penalty);
+    # tripling the velocity-tracking reward makes following the twist command
+    # clearly worth it, forcing it to actually move in the commanded direction.
     "track_linear_velocity": RewardTermCfg(
       func=vmdp.track_linear_velocity,
-      weight=1.0,
+      weight=3.0,
       params={"command_name": "twist", "std": math.sqrt(0.25)},
     ),
     "track_angular_velocity": RewardTermCfg(
       func=vmdp.track_angular_velocity,
-      weight=1.0,
+      weight=3.0,
       params={"command_name": "twist", "std": math.sqrt(0.5)},
     ),
     "body_orientation_l2": RewardTermCfg(
@@ -302,9 +308,13 @@ def make_reaching_loco_env_cfg() -> ManagerBasedRlEnvCfg:
       weight=-0.025,  # Override per-robot.
       params={"sensor_name": "robot/root_angmom"},
     ),
+    # 2026-07-08: 0.5 -> 1.5. Directly rewards matching the alternating gait
+    # clock (one foot in swing) when commanded to walk; standing (both feet
+    # planted) only half-matches the clock, so a heavier weight actively pushes
+    # the robot to lift a foot instead of shuffling in place.
     "foot_gait": RewardTermCfg(
       func=vmdp.feet_gait,
-      weight=0.5,
+      weight=1.5,
       params={
         "period": 0.6,
         "offset": [0.0, 0.5],
