@@ -213,14 +213,20 @@ def make_reaching_loco_env_cfg() -> ManagerBasedRlEnvCfg:
       },
     ),
     # Gentle ±16 N horizontal torso push (kept from reaching_v2, per user).
+    # push_torso_force is a STEP-mode stateful event (it runs its own
+    # cooldown -> trigger -> sustain cycle), so mode="step" + duration_s/
+    # cooldown_s — NOT an interval event.
     "push_torso": EventTermCfg(
+      mode="step",
       func=rmdp.push_torso_force,
-      mode="interval",
-      interval_range_s=(3.0, 6.0),
       params={
         "force_range_x": (-16.0, 16.0),
         "force_range_y": (-16.0, 16.0),
         "force_range_z": (0.0, 0.0),
+        "torque_range": (0.0, 0.0),
+        "duration_s": (0.3, 0.8),
+        "cooldown_s": (2.0, 4.0),
+        "body_point_offset": (0.0, 0.0, 0.2),
         "asset_cfg": SceneEntityCfg("robot", body_names=()),  # Set per-robot (torso).
       },
     ),
